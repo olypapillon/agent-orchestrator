@@ -1,16 +1,31 @@
 # Agent Orchestrator
 
-A multi-agent chatbot built with [LangGraph](https://langchain-ai.github.io/langgraph/) that classifies your intent, retrieves knowledge with RAG, and ships code through a human-approved Claude Code pipeline — all orchestrated as a single stateful graph.
+One chatbot gives a business a single, reliable front door for customer conversations and internal requests: it handles casual chat, answers questions using only the client's loaded documents, and routes code changes through an approval step before anything runs. [LangGraph](https://langchain-ai.github.io/langgraph/) coordinates those specialists behind the scenes, while Gemini 2.5 Flash handles conversation and Claude Code carries out approved work in a sandboxed `workspace/` directory.
 
 ## What it does
 
-The app (`main.py`) runs an interactive chat loop in the terminal. Every message you type is classified into one of three intents, and the graph routes it to the right agent:
+The terminal app gives every request to the specialist best suited to handle it:
 
 | Intent | Agent | Behavior |
 |---|---|---|
-| `chat` | Chat agent | A friendly, talkative chatbot (Gemini 2.5 Flash) |
-| `knowledge` | RAG agent | Answers using only documents retrieved from an in-memory vector store |
-| `code` | Coding agent | Rewrites your request into a clear instruction, asks you to approve it, then runs **Claude Code** on a sandboxed `workspace/` directory |
+| `chat` | Chat agent | Handles everyday conversation with fast, friendly responses powered by Gemini 2.5 Flash. |
+| `knowledge` | RAG agent | Answers customer or staff questions only from the three most relevant passages in the loaded document set, and says it does not know when the documents do not support an answer. |
+| `code` | Coding agent | Clarifies the requested code change, pauses so a person can approve, deny, or revise it, then sends approved work to **Claude Code** inside the sandboxed `workspace/` directory. |
+
+**Why chat matters:** People get a natural response from the same assistant even when their request does not require company knowledge or a technical action.
+
+**Why knowledge matters:** Customers and staff receive answers grounded in the material the business provides instead of plausible-sounding guesses.
+
+**Why code matters:** The approval gate lets the assistant take real action while keeping a person in control of every change.
+
+## Notes for production
+
+- Replace `InMemorySaver` with a persistent checkpointer so conversations and approval requests survive process restarts.
+- Replace the sample `KNOWLEDGE` list and in-memory vector store with a controlled document-ingestion process and durable, client-isolated storage.
+- Add an evaluation harness for retrieval quality, grounded answers, and the agent's ability to say it does not know when evidence is missing.
+- Add authentication, authorization, tenant isolation, and rate limiting before exposing the service to customers or staff.
+- Move API keys and other credentials out of local `.env` files and into a managed secret store with rotation and access controls.
+- Harden code execution beyond the demo `workspace/` boundary with deployment-appropriate isolation, command restrictions, timeouts, and audit logs.
 
 ## Graph architecture
 
@@ -58,12 +73,11 @@ echo 'GOOGLE_API_KEY=your-key-here' > .env
 uv run main.py
 ```
 
-On startup the graph also renders itself to `graph.png`. Then just chat:
+On startup the graph also renders itself to `graph.png`. With relevant company product material loaded into `KNOWLEDGE`, a support-to-engineering handoff can look like:
 
 ```
-Enter message : hi there!                      # → chat agent
-Enter message : what is LangGraph?             # → RAG agent
-Enter message : create a hello.py in the repo  # → coding pipeline (asks for approval first)
+Enter message : Does the Business plan support SSO?                       # → knowledge agent; answers only from loaded company documents
+Enter message : Update the pricing page so its SSO details are accurate   # → coding pipeline; drafts the change and pauses for approval
 ```
 
 When a coding request is detected you'll see:
