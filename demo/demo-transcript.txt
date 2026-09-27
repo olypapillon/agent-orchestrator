@@ -1,0 +1,18 @@
+Enter message : What is RAG?
+RAG (Retrieval-Augmented Generation) lets a model answer using external knowledge it was never trained on.
+
+Enter message : create hello.py that prints hello world
+About to run Codex with request:
+
+```python
+# hello.py
+print("hello world")
+```
+
+Approve? (yes/no, or type a revised request)
+> yes
+Running `hello.py` prints:
+
+```text
+hello world
+```

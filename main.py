@@ -1,5 +1,6 @@
 import uuid
 import os
+import shutil
 import subprocess
 from dotenv import load_dotenv
 from typing import TypedDict, Annotated, Literal
@@ -13,6 +14,27 @@ from langgraph.graph.message import add_messages
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import interrupt, Command 
 load_dotenv()
+
+def command_is_ready(executable: str, status_args: list[str]):
+    if shutil.which(executable) is None:
+        return False
+
+    result = subprocess.run(
+        [executable, *status_args],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+def select_coding_cli():
+    if command_is_ready('codex', ['login', 'status']):
+        return 'codex', 'Codex'
+    if command_is_ready('claude', ['auth', 'status']):
+        return 'claude', 'Claude Code'
+    return None, 'coding agent'
+
+coding_cli, coding_agent_name = select_coding_cli()
+
 KNOWLEDGE = ["The LangChain Expression Language lets you compose a prompt, model, and output parser into a single runnable pipeline.",
              "Oly is an AI Engineer",
              "LangGraph models workflows as graphs that can loop. Unlike a simple chain (a DAG that runs once start-to-finish), LangGraph supports cycles",
@@ -32,7 +54,7 @@ class State(TypedDict):
     next_node: str| None
 
 def prepare_coding_request(state: State):
-    messages = [{'role':'system', 'content':'Rewrite the latest user coding request into a clear instruction for Claude Code.\
+    messages = [{'role':'system', 'content':f'Rewrite the latest user coding request into a clear instruction for {coding_agent_name}.\
                   Use the conversation history as context. Only output the instruction, no explanation'}] + state['messages']
     
     response = llm.invoke(messages)
@@ -53,7 +75,7 @@ def classify_intent(state: State):
 
 def accept_coding(state:State):
     user_prompt = state['messages'][-1].content
-    decision = interrupt(f'About to run Claude Code with request: \n\n{user_prompt}\n\n Approve? (yes/no, or type a revised request)')
+    decision = interrupt(f'About to run {coding_agent_name} with request: \n\n{user_prompt}\n\n Approve? (yes/no, or type a revised request)')
     
     text = str(decision).strip()
     if text in ['y','yes','approve','ok']:
@@ -83,8 +105,33 @@ def prompt_llm_code(state: State):
     user_prompt = state['messages'][-1].content
     workspace = os.path.join(os.path.dirname(os.path.abspath(__file__)),'workspace')
 
+    if coding_cli == 'codex':
+        command = [
+            'codex',
+            '--ask-for-approval',
+            'never',
+            'exec',
+            '--sandbox',
+            'workspace-write',
+            '--skip-git-repo-check',
+            '--ephemeral',
+            '--color',
+            'never',
+            user_prompt,
+        ]
+    elif coding_cli == 'claude':
+        command = [
+            'claude',
+            '-p',
+            user_prompt,
+            '--permission-mode',
+            'acceptEdits',
+        ]
+    else:
+        return {'messages' :[{'role': 'assistant', 'content': 'Neither Codex nor Claude Code is installed and authenticated.'}]}
+
     result = subprocess.run(
-        ['claude', '-p', user_prompt , '--permission-mode' , 'acceptEdits'],
+        command,
         cwd=workspace,
         capture_output=True,
         text=True)

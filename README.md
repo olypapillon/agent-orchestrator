@@ -1,16 +1,41 @@
 # Agent Orchestrator
 
-One chatbot gives a business a single, reliable front door for customer conversations and internal requests: it handles casual chat, answers questions using only the client's loaded documents, and routes code changes through an approval step before anything runs. [LangGraph](https://langchain-ai.github.io/langgraph/) coordinates those specialists behind the scenes, while Gemini 2.5 Flash handles conversation and Claude Code carries out approved work in a sandboxed `workspace/` directory.
+One chatbot gives a business a single, reliable front door for customer conversations and internal requests: it handles casual chat, answers questions using only the client's loaded documents, and routes code changes through an approval step before anything runs. [LangGraph](https://langchain-ai.github.io/langgraph/) coordinates those specialists behind the scenes, while Gemini 2.5 Flash handles conversation and Codex—or Claude Code as a fallback—carries out approved work in a sandboxed `workspace/` directory.
+
+## See it in action
+
+A knowledge question is answered strictly from the loaded documents, then a code request is rewritten and paused at the human approval gate.
+
+````text
+Enter message : What is RAG?
+RAG (Retrieval-Augmented Generation) lets a model answer using external knowledge it was never trained on.
+
+Enter message : create hello.py that prints hello world
+About to run Codex with request:
+
+```python
+# hello.py
+print("hello world")
+```
+
+Approve? (yes/no, or type a revised request)
+> yes
+Running `hello.py` prints:
+
+```text
+hello world
+```
+````
 
 ## What it does
 
 The terminal app gives every request to the specialist best suited to handle it:
 
-| Intent | Agent | Behavior |
+| Intent | Agent | Behaviour |
 |---|---|---|
 | `chat` | Chat agent | Handles everyday conversation with fast, friendly responses powered by Gemini 2.5 Flash. |
 | `knowledge` | RAG agent | Answers customer or staff questions only from the three most relevant passages in the loaded document set, and says it does not know when the documents do not support an answer. |
-| `code` | Coding agent | Clarifies the requested code change, pauses so a person can approve, deny, or revise it, then sends approved work to **Claude Code** inside the sandboxed `workspace/` directory. |
+| `code` | Coding agent | Clarifies the requested code change, pauses so a person can approve, deny, or revise it, then sends approved work to **Codex** (or Claude Code as a fallback) inside the sandboxed `workspace/` directory. |
 
 **Why chat matters:** People get a natural response from the same assistant even when their request does not require company knowledge or a technical action.
 
@@ -48,14 +73,14 @@ START → classifier ──► chat_agent ────────────�
 - **RAG** — a tiny knowledge base is embedded with `gemini-embedding-001` into an `InMemoryVectorStore`; the RAG agent retrieves the top-3 similar documents and is instructed to answer *only* from that context.
 - **Human-in-the-loop** — `accept_coding` calls `interrupt(...)`, which pauses the graph and surfaces an approval prompt. The CLI loop detects `__interrupt__` in the result and resumes the graph with `Command(resume=decision)`. Answering with a revised request loops back to `prepare_coding`, forming a **cycle** — the thing that distinguishes LangGraph from a plain chain.
 - **Checkpointing** — the graph is compiled with `InMemorySaver` and invoked with a `thread_id`, so conversation state persists across turns (and across the interrupt/resume cycle).
-- **Agent delegation** — `prompt_llm_code` shells out to the Claude Code CLI (`claude -p "<instruction>" --permission-mode acceptEdits`) with `cwd` set to `workspace/`, so code edits are confined to that directory.
+- **Agent delegation** — `prompt_llm_code` prefers the authenticated Codex CLI (`codex --ask-for-approval never exec --sandbox workspace-write ...`) and falls back to Claude Code (`claude -p "<instruction>" --permission-mode acceptEdits`). Both run with `cwd` set to `workspace/`, so code edits are confined to that directory.
 
 ## Requirements
 
 - Python ≥ 3.12
 - [uv](https://docs.astral.sh/uv/) (or pip)
 - A Google AI API key (for Gemini chat + embeddings)
-- [Claude Code](https://claude.com/claude-code) installed and on your `PATH` (only needed for the `code` intent)
+- [Codex CLI](https://developers.openai.com/codex/cli/) or [Claude Code](https://claude.com/claude-code) installed, authenticated, and on your `PATH` (only needed for the `code` intent)
 
 ## Setup
 
@@ -83,14 +108,14 @@ Enter message : Update the pricing page so its SSO details are accurate   # → 
 When a coding request is detected you'll see:
 
 ```
-About to run Claude Code with request:
+About to run Codex with request:
 
 <rewritten instruction>
 
 Approve? (yes/no, or type a revised request)
 ```
 
-- `yes` — runs Claude Code in `workspace/`
+- `yes` — runs the selected coding CLI in `workspace/`
 - `no` — cancels
 - anything else — treated as a revised request and re-prepared
 
@@ -98,7 +123,7 @@ Approve? (yes/no, or type a revised request)
 
 ```
 ├── main.py        # the whole graph: state, nodes, edges, CLI loop
-├── workspace/     # sandbox directory Claude Code operates in
+├── workspace/     # sandbox directory the selected coding CLI operates in
 ├── graph.png      # auto-generated diagram of the compiled graph
 └── pyproject.toml # dependencies (langgraph, langchain, langchain-google-genai)
 ```

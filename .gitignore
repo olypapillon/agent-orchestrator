@@ -9,6 +9,7 @@ wheels/
 # Virtual environments
 .venv
 .env
+/demo-transcript.txt
 
 # macOS
 .DS_Store
